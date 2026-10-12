@@ -17,6 +17,10 @@ FastAPI ve Next.js (TypeScript / TSX) ile çalışan yerel arka plan kaldırma s
 
 ## Tek tıkla çalıştırma
 
+**İlk kurulum: `setup.bat` dosyasına çift tıklayın.** Windows x64 üzerinde eksik Python 3.13 ve Node.js 24 LTS resmî kaynaklardan otomatik hazırlanır. İndirme SHA256 değerleri doğrulanır. Python/Node mevcut ve uyumluysa yeniden kurulmaz. Eksik çalışma ortamları proje içindeki `.tools/` klasörüne hazırlanır; sistem PATH ayarı değiştirilmez. Python ortamı, CPU/NVIDIA paketleri, Next.js arayüzü ve tüm model önbellekleri hazırlanır. İlk kurulum internet ve birkaç GB boş alan gerektirir. Hazırlık sonunda sunucular otomatik açılmaz; `çalıştır.bat` ile açılır, `stop.bat` ile kapatılır. Kurulum kaydı `logs/setup.log` içindedir; kesilen kurulumu aynı dosyayı tekrar açarak sürdürebilirsiniz.
+
+Komut satırı: `setup.bat -NoPause` kurulum sonunda beklemez; `setup.bat -SkipModels` model indirmeyi ilk kullanıma bırakır. `python launcher.py --setup-only --download-models` yalnızca uygulama/model hazırlığını yapar. Aşağıdaki manuel ortam kurulumu isteğe bağlıdır:
+
 Kapatmak için **stop.bat** dosyasına çift tıklayın. Bu klasörden çalışan backend/frontend ve onların alt süreçleri arka planda sonlandırılır; başka projelerin Python/Node süreçlerine dokunulmaz. Tamamlanmamış işlemler kesilir. `stop.ps1` dosyasını `stop.bat` ile aynı klasörde tutun.
 
 1. **Python 3.12** (3.12–3.13 desteklenir) ve **Node.js 22 veya 24 LTS** bilgisayarda kurulu olmalı. Python kurulumunda `Add Python to PATH` seçeneğini işaretleyin.

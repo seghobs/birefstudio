@@ -46,9 +46,12 @@ def wait_http(url, child, timeout=90):
     raise RuntimeError("Sunucu zamaninda acilmadi. logs klasorunu kontrol edin.")
 
 
-def main():
+def main(setup_only=False, download_models=False):
     if not (3, 12) <= sys.version_info[:2] < (3, 14):
         raise RuntimeError("Python 3.12 veya 3.13 kurun (onerilen: 3.12).")
+    portable_node = ROOT / ".tools/node/node.exe"
+    if os.name == "nt" and portable_node.exists():
+        os.environ["PATH"] = str(portable_node.parent) + os.pathsep + os.environ.get("PATH", "")
     npm = shutil.which("npm.cmd" if os.name == "nt" else "npm")
     node = shutil.which("node")
     if not npm or not node:
@@ -60,7 +63,7 @@ def main():
     web_port = int(os.environ.get("STUDIO_WEB_PORT", "3000"))
     if api_port == web_port or not all(1024 <= p <= 65535 for p in (api_port, web_port)):
         raise RuntimeError("Web ve API icin farkli, 1024-65535 arasi portlar kullanin.")
-    for port in (api_port, web_port):
+    for port in (() if setup_only else (api_port, web_port)):
         with socket.socket() as sock:
             try:
                 sock.bind(("127.0.0.1", port))
@@ -114,6 +117,11 @@ def main():
         run([npm, "run", "build"], cwd=FRONTEND, env=env)
         # Next may update tsconfig during the first build.
         build_marker.write_text(fingerprint(source_paths) + env["API_URL"])
+    if setup_only:
+        if download_models:
+            run([str(PYTHON), "-m", "backend.prepare_models"])
+        print("Kurulum tamamlandi. Studyo icin CALISTIR.bat dosyasini acin.", flush=True)
+        return
     print("[4/4] Studyo aciliyor...", flush=True)
     processes = []
     handles = []
@@ -155,7 +163,12 @@ def main():
 
 if __name__ == "__main__":
     try:
-        main()
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--setup-only", action="store_true")
+        parser.add_argument("--download-models", action="store_true")
+        args = parser.parse_args()
+        main(args.setup_only, args.download_models)
     except Exception as error:
         print(f"\nHATA: {error}", file=sys.stderr)
         sys.exit(1)

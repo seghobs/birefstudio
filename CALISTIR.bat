@@ -2,6 +2,14 @@
 setlocal
 cd /d "%~dp0"
 title BiRef Studio
+if exist ".venv\Scripts\python.exe" (
+    ".venv\Scripts\python.exe" launcher.py
+    goto finished
+)
+if exist ".tools\python\python.exe" (
+    ".tools\python\python.exe" launcher.py
+    goto finished
+)
 where py >nul 2>nul
 if errorlevel 1 goto fallback
 py -3.12 -c "import sys" >nul 2>nul
