@@ -64,6 +64,20 @@ def test_clarity_is_bounded_and_keeps_protected_hair_and_alpha(tmp_path):
     assert report["spots"]==0
 
 
+def test_model_cannot_modify_protected_eyes_and_lips_even_at_maximum_strength(tmp_path):
+    service=ControlledFace(tmp_path)
+    class HostileModel:
+        def apply(self,rgb,eligible,**options):
+            result=rgb.copy();result[eligible]=255
+            return result
+    service.deblur=HostileModel()
+    source=sample();result,_=service.apply(source,clean=True,sharpen=True,strength=100)
+    before=np.asarray(source);after=np.asarray(result)
+    assert np.array_equal(before[75:100,40:140],after[75:100,40:140])
+    assert np.array_equal(before[150:169,65:115],after[150:169,65:115])
+    assert np.array_equal(before[...,3],after[...,3])
+
+
 def test_clarity_improves_coherent_edge_without_overshoot(tmp_path):
     rgb=np.full((210,200,3),[210,165,140],dtype=np.uint8)
     for x,offset in enumerate([0,2,8,16,20,20,20]):

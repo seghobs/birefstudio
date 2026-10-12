@@ -30,15 +30,6 @@ def transfer_detail(source, restored, eligible, strength=70, features=None):
     output=source.copy()
     changed=np.round(np.clip(source.astype(float)+delta[...,None],lower,upper)).astype(np.uint8)
     output[selected]=changed[selected]
-    if features is not None:
-        # Eyes and lips need a wider coherent restoration than isolated pixel
-        # gates. Transfer bounded luminance only; never substitute model RGB.
-        weight=np.clip(features,0,1)*amount
-        feature_delta=np.clip(difference,-24,24)*weight
-        feature_result=np.round(np.clip(source.astype(float)+feature_delta[...,None],
-                                        lower.astype(float)-3*amount,upper.astype(float)+3*amount))
-        feature_pixels=(weight>0)&eligible
-        output[feature_pixels]=np.clip(feature_result[feature_pixels],0,255).astype(np.uint8)
     return output
 
 

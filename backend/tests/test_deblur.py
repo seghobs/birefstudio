@@ -36,12 +36,12 @@ def test_small_face_is_padded_for_nafnet_without_resizing(tmp_path):
     assert np.array_equal(output,source)
 
 
-def test_strength_zero_is_exact_and_feature_restoration_stays_local():
+def test_strength_zero_and_flat_skin_remain_exact_even_with_feature_hint():
     source=np.full((40,40,3),120,dtype=np.uint8)
     restored=np.full(source.shape,135,dtype=np.float32)
     features=np.zeros((40,40),dtype=float);features[12:18,12:18]=1
     eligible=np.ones((40,40),bool)
     assert np.array_equal(transfer_detail(source,restored,eligible,0,features),source)
     result=transfer_detail(source,restored,eligible,100,features)
-    assert np.any(result[12:18,12:18]!=source[12:18,12:18])
+    assert np.array_equal(result,source)
     assert np.array_equal(result[:10],source[:10])

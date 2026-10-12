@@ -74,12 +74,19 @@ class FaceRetoucher:
                 px,py=np.round(point).astype(int)
                 cv2.rectangle(safe,(px-round(fw*.18),py-round(fh*.13)),
                               (px+round(fw*.18),py+round(fh*.07)),0,-1)
+            eye_min=np.floor(points[:2].min(axis=0)).astype(int)
+            eye_max=np.ceil(points[:2].max(axis=0)).astype(int)
+            cv2.rectangle(safe,(eye_min[0]-round(fw*.18),eye_min[1]-round(fh*.13)),
+                          (eye_max[0]+round(fw*.18),eye_max[1]+round(fh*.07)),0,-1)
             nx,ny=np.round(points[2]).astype(int)
             cv2.ellipse(safe,(nx,ny),(max(2,round(fw*.10)),max(2,round(fh*.05))),0,0,360,0,-1)
             # Protect the mouth rather than excluding the entire lower face.
             mouth=points[3:5].mean(axis=0)
             cv2.ellipse(safe,tuple(np.round(mouth).astype(int)),
                         (max(3,round(fw*.27)),max(3,round(fh*.10))),0,0,360,0,-1)
+            mx,my=np.round(mouth).astype(int)
+            cv2.rectangle(safe,(mx-round(fw*.27),my-round(fh*.10)),
+                          (mx+round(fw*.27),my+round(fh*.10)),0,-1)
             safe &= (alpha>=250).astype(np.uint8)
             lab=cv2.cvtColor(rgb,cv2.COLOR_RGB2LAB).astype(np.float32)
             if (safe>0).sum() < 40:
@@ -96,7 +103,7 @@ class FaceRetoucher:
             # Median is used only to find local outliers, never as output skin.
             local_light=cv2.medianBlur(light.astype(np.uint8),size).astype(np.float32)
             local_red=cv2.medianBlur(lab[...,1].astype(np.uint8),size).astype(np.float32)
-            dark=(local_light-light)>(4 if spots else 10)
+            dark=(local_light-light)>(8 if spots else 10)
             red=(lab[...,1]-local_red)>5
             candidate=(safe>0)&dark&(red|spots)
             count,labels,stats,_=cv2.connectedComponentsWithStats(candidate.astype(np.uint8),8)
@@ -146,31 +153,25 @@ class FaceRetoucher:
                         score=float(np.mean((tone-target_tone)**2))
                         if score<best_score:
                             best_score=score;best=(donor,tone)
-                    if best is None or best_score>500:
+                    if best is None or best_score>64:
                         continue
                     donor,tone=best
-                    donor=np.clip(donor.astype(float)+np.clip(target_tone-tone,-12,12),0,255)
-                    blend=np.minimum(distance_transform_edt(lesion)/1.25,1)[...,None]
+                    target_texture=np.std(rgb[y0:y1,x0:x1][ring].astype(float),axis=0)
+                    donor_texture=np.std(donor.reshape(-1,3).astype(float),axis=0)
+                    if np.max(np.abs(target_texture-donor_texture))>8:
+                        continue
+                    donor=np.clip(donor.astype(float)+np.clip(target_tone-tone,-6,6),0,255)
+                    blend=np.minimum(distance_transform_edt(lesion)/2,1)[...,None]
                     existing=working[y0:y1,x0:x1].astype(float)
                     healed=np.round(existing*(1-blend)+donor*blend).astype(np.uint8)
                     working[y0:y1,x0:x1][lesion]=healed[lesion]
                     changed[y0:y1,x0:x1] |= lesion
                     report["spots"]+=1
             if sharpen:
-                # Include eyes/lips in detail restoration, while keeping the
-                # hair contour, alpha boundary and outside face unchanged.
-                detail_mask=np.zeros((fh,fw),dtype=np.uint8)
-                cv2.ellipse(detail_mask,(round(fw*.5),round(fh*.5)),
-                            (round(fw*.34),round(fh*.42)),0,0,360,1,-1)
-                detail_mask=(detail_mask>0)&(alpha>=250)&~protected
-                features=np.zeros((fh,fw),dtype=np.uint8)
-                for point in points[:2]:
-                    cv2.ellipse(features,tuple(np.round(point).astype(int)),
-                                (max(3,round(fw*.13)),max(3,round(fh*.065))),0,0,360,1,-1)
-                cv2.ellipse(features,tuple(np.round(mouth).astype(int)),
-                            (max(3,round(fw*.23)),max(3,round(fh*.085))),0,0,360,1,-1)
-                features=np.minimum(distance_transform_edt(features)/max(2,fw*.018),1)
-                restored=self.deblur.apply(working,detail_mask,strength=strength,features=features)
+                # The same protected skin mask applies to BOTH stages.
+                # Never restore eyes, brows, lips or nostrils from model output.
+                detail_mask=(safe>0)&(alpha>=250)&~protected
+                restored=self.deblur.apply(working,detail_mask,strength=strength)
                 changed |= np.any(restored!=working,axis=2)
                 working=restored
                 # Sharpen coherent luminance edges, not freckles/pore noise.
