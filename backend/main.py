@@ -62,7 +62,7 @@ class Store:
             columns = {row[1] for row in db.execute("PRAGMA table_info(jobs)")}
             for name, definition in {"progress": "INTEGER NOT NULL DEFAULT 0", "stage": "TEXT NOT NULL DEFAULT 'Bekliyor'", "pipeline": "TEXT NOT NULL DEFAULT ''",
                                      "face_clean":"INTEGER NOT NULL DEFAULT 0", "face_sharpen":"INTEGER NOT NULL DEFAULT 0",
-                                     "face_strength":"INTEGER NOT NULL DEFAULT 70", "face_spots":"INTEGER NOT NULL DEFAULT 1", "face_report":"TEXT NOT NULL DEFAULT '{}'"}.items():
+                                     "eye_sharpen":"INTEGER NOT NULL DEFAULT 0", "face_strength":"INTEGER NOT NULL DEFAULT 70", "face_spots":"INTEGER NOT NULL DEFAULT 1", "face_report":"TEXT NOT NULL DEFAULT '{}'"}.items():
                 if name not in columns:
                     db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
             db.execute("UPDATE jobs SET progress=100, stage='Hazır' WHERE status='done'")
@@ -100,17 +100,17 @@ class Store:
         with self.connect() as db:
             db.execute("UPDATE jobs SET progress=?, stage=? WHERE id=?", (progress, stage, job_id))
 
-    def add(self, job_id, name, model, refine, width, height, pipeline, face_clean=False, face_sharpen=False, face_spots=True, face_strength=70):
+    def add(self, job_id, name, model, refine, width, height, pipeline, face_clean=False, face_sharpen=False, face_spots=True, face_strength=70, eye_sharpen=False):
         with self.connect() as db:
             db.execute("INSERT INTO jobs (id,name,status,model,refine,width,height,created_at,error,pipeline) VALUES (?,?,?,?,?,?,?,?,?,?)",
                        (job_id, name, "queued", model, int(refine), width, height, datetime.now(timezone.utc).isoformat(), None, pipeline))
-            db.execute("UPDATE jobs SET face_clean=?,face_sharpen=?,face_spots=?,face_strength=? WHERE id=?",
-                       (int(face_clean),int(face_sharpen),int(face_spots),face_strength,job_id))
+            db.execute("UPDATE jobs SET face_clean=?,face_sharpen=?,face_spots=?,face_strength=?,eye_sharpen=? WHERE id=?",
+                       (int(face_clean),int(face_sharpen),int(face_spots),face_strength,int(eye_sharpen),job_id))
 
     def public(self, row: dict):
         return {**row, "refine": bool(row["refine"]), "face_clean":bool(row["face_clean"]),
                 "face_sharpen":bool(row["face_sharpen"]), "face_spots":bool(row["face_spots"]),
-                "face_report":json.loads(row["face_report"]),
+                "eye_sharpen":bool(row["eye_sharpen"]), "face_report":json.loads(row["face_report"]),
                 "original_url": f"/api/jobs/{row['id']}/original",
                 "result_url": f"/api/jobs/{row['id']}/result" if row["status"] == "done" else None}
 
@@ -135,11 +135,11 @@ def create_app(data_dir: Path | None = None, engine=None, face_service=None, rec
 
     def apply_face(job_id, result):
         row=store.get(job_id)
-        if row["face_clean"] or row["face_sharpen"]:
+        if row["face_clean"] or row["face_sharpen"] or row["eye_sharpen"]:
             result.save(store.root / f"{job_id}.base.png",format="PNG")
             store.report(job_id,98,"Yüzde küçük leke ve detay kontrolü yapılıyor")
             result,info=face_service.apply(result,clean=bool(row["face_clean"]),
-                                           sharpen=bool(row["face_sharpen"]),spots=bool(row["face_spots"]),strength=row["face_strength"])
+                                           sharpen=bool(row["face_sharpen"]),spots=bool(row["face_spots"]),strength=row["face_strength"],eyes=bool(row["eye_sharpen"]))
             with store.connect() as db:
                 db.execute("UPDATE jobs SET face_report=? WHERE id=?",(json.dumps(info,ensure_ascii=False),job_id))
         return result
@@ -183,7 +183,7 @@ def create_app(data_dir: Path | None = None, engine=None, face_service=None, rec
             rows = db.execute("SELECT * FROM jobs ORDER BY created_at DESC LIMIT 100").fetchall()
         return [store.public(dict(row)) for row in rows]
 
-    def enqueue(raw, name, model, refine, face_clean=False, face_sharpen=False, face_spots=True, face_strength=70):
+    def enqueue(raw, name, model, refine, face_clean=False, face_sharpen=False, face_spots=True, face_strength=70, eye_sharpen=False):
         image = decode_image(raw)
         if not slots.acquire(blocking=False):
             image.close()
@@ -194,9 +194,9 @@ def create_app(data_dir: Path | None = None, engine=None, face_service=None, rec
             pipeline = "BiRefNet HR-matting" if model == "quality" else "U²-Net"
             if refine:
                 pipeline += " + Yapı kontrolü + ViTMatte-B" if model == "quality" else " + ViTMatte-B"
-            if face_clean or face_sharpen:
+            if face_clean or face_sharpen or eye_sharpen:
                 pipeline += " · Yüz rötuşu"
-            store.add(job_id, name, model, refine, image.width, image.height, pipeline,face_clean,face_sharpen,face_spots,face_strength)
+            store.add(job_id, name, model, refine, image.width, image.height, pipeline,face_clean,face_sharpen,face_spots,face_strength,eye_sharpen)
             worker.submit(process, job_id, image, model, refine)
         except Exception:
             slots.release()
@@ -208,7 +208,7 @@ def create_app(data_dir: Path | None = None, engine=None, face_service=None, rec
     @app.post("/api/jobs", status_code=202)
     async def upload(file: UploadFile = File(...), model: Literal["quality", "fast"] = Form("quality"),
                      refine: bool | None = Form(None), face_clean: bool = Form(False),
-                     face_sharpen: bool = Form(False), face_spots: bool = Form(True), face_strength: int = Form(70,ge=0,le=100)):
+                     face_sharpen: bool = Form(False), face_spots: bool = Form(True), face_strength: int = Form(70,ge=0,le=100), eye_sharpen: bool = Form(False)):
         try:
             raw = await file.read(MAX_BYTES + 1)
         finally:
@@ -217,7 +217,7 @@ def create_app(data_dir: Path | None = None, engine=None, face_service=None, rec
             raise HTTPException(413, "Dosya boyutu en fazla 20 MB olabilir.")
         name = (file.filename or "fotoğraf").replace("\\", "/").split("/")[-1][:180]
         return await run_in_threadpool(enqueue, raw, name, model, model == "quality" if refine is None else refine,
-                                      face_clean,face_sharpen,face_spots,face_strength)
+                                      face_clean,face_sharpen,face_spots,face_strength,eye_sharpen)
 
     @app.get("/api/jobs/{job_id}")
     def job(job_id: str):
@@ -294,7 +294,7 @@ def create_app(data_dir: Path | None = None, engine=None, face_service=None, rec
                     alpha = result.getchannel("A")
                 shutil.copyfile(image_path(job_id, True), store.root / f"{new_id}.original.png")
                 store.add(new_id, row["name"], row["model"], True, row["width"], row["height"], "ViTMatte-B · Bölgesel saç detayı",
-                          row["face_clean"],row["face_sharpen"],row["face_spots"],row["face_strength"])
+                          row["face_clean"],row["face_sharpen"],row["face_spots"],row["face_strength"],row["eye_sharpen"])
                 worker.submit(process, new_id, image, row["model"], True, alpha, region)
             except Exception:
                 slots.release()
@@ -319,7 +319,7 @@ def create_app(data_dir: Path | None = None, engine=None, face_service=None, rec
         # Save as a new job: the previous cutout remains available for comparison.
         return await run_in_threadpool(enqueue_refinement, job_id, raw)
 
-    def enqueue_retouch(job_id, clean, sharpen, spots, strength):
+    def enqueue_retouch(job_id, clean, sharpen, spots, strength, eye_sharpen):
         with edit_lock:
             row=store.get(job_id)
             result_path=image_path(job_id)
@@ -335,10 +335,10 @@ def create_app(data_dir: Path | None = None, engine=None, face_service=None, rec
                     image=base.convert("RGBA")
                 shutil.copyfile(image_path(job_id,True),store.root / f"{new_id}.original.png")
                 pipeline=row["pipeline"].split(" · Yüz rötuşu")[0]
-                if clean or sharpen:
+                if clean or sharpen or eye_sharpen:
                     pipeline += " · Yüz rötuşu"
                 store.add(new_id,row["name"],row["model"],row["refine"],row["width"],row["height"],
-                          pipeline,clean,sharpen,spots,strength)
+                          pipeline,clean,sharpen,spots,strength,eye_sharpen)
                 worker.submit(process,new_id,image,row["model"],row["refine"],skip_background=True)
             except Exception:
                 slots.release()
@@ -350,8 +350,8 @@ def create_app(data_dir: Path | None = None, engine=None, face_service=None, rec
 
     @app.post("/api/jobs/{job_id}/retouch",status_code=202)
     async def retouch(job_id: str, face_clean: bool = Form(False), face_sharpen: bool = Form(False),
-                      face_spots: bool = Form(True), face_strength: int = Form(70,ge=0,le=100)):
-        return await run_in_threadpool(enqueue_retouch,job_id,face_clean,face_sharpen,face_spots,face_strength)
+                      face_spots: bool = Form(True), face_strength: int = Form(70,ge=0,le=100), eye_sharpen: bool = Form(False)):
+        return await run_in_threadpool(enqueue_retouch,job_id,face_clean,face_sharpen,face_spots,face_strength,eye_sharpen)
 
     @app.get("/api/jobs/{job_id}/download")
     def download(job_id: str, background: str = "transparent", format: Literal["png", "jpg"] = "png",

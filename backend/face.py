@@ -51,15 +51,21 @@ class FaceRetoucher:
         detections[:,:14] /= scale
         return detections.tolist()
 
-    def apply(self, image, clean=False, sharpen=False, spots=True, strength=70):
-        if not clean and not sharpen:
+    def apply(self, image, clean=False, sharpen=False, spots=True, strength=70, eyes=False):
+        if not clean and not sharpen and not eyes:
             return image.copy(), {"faces":0,"spots":0,"changed_pixels":0,"message":"Yüz işlemi kapalı"}
         import cv2
         rgba = np.asarray(image.convert("RGBA"))
         original = rgba[...,:3].copy()
+        detections=self.detect(original)
+        if eyes and not clean and not sharpen:
+            from .eye_detail import enhance_eyes
+            result,info=enhance_eyes(image,detections)
+            return result,{**info,'faces':len(detections),'spots':0,'changed_pixels':info['eye_changed_pixels'],
+                           'message':f"{info['eyes']} göz · doğal göz netliği · {info['eye_changed_pixels']} piksel değişti"}
         output = original.copy()
         report = {"faces":0,"spots":0,"changed_pixels":0,"message":""}
-        for detection in self.detect(original):
+        for detection in detections:
             x,y,w,h = detection[:4]
             if w < 40 or h < 40:
                 continue
@@ -262,4 +268,12 @@ class FaceRetoucher:
                            f"{report['faces']} yüz · {report['spots']} leke alanı · {report['changed_pixels']} piksel değişti" +
                            (" · NAFNet seçici detay" if sharpen else ""))
         result=rgba.copy();result[...,:3]=output
-        return Image.fromarray(result),report
+        result=Image.fromarray(result)
+        if eyes:
+            from .eye_detail import enhance_eyes
+            result,info=enhance_eyes(result,detections)
+            report.update(info)
+            report['changed_pixels']=int(np.any(np.asarray(result)[...,:3]!=original,axis=2).sum())
+            report['message']=(f"{report['faces']} yüz · {report['spots']} leke alanı · {report['changed_pixels']} piksel değişti"+
+                               (" · NAFNet seçici detay" if sharpen else "")+f" · {info['eyes']} gözde doğal netlik")
+        return result,report

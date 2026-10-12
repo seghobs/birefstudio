@@ -3,7 +3,7 @@ export type Job = {
   model: "quality" | "fast"; refine: boolean; width: number; height: number;
   created_at: string; error: string | null; original_url: string; result_url: string | null;
   progress: number; stage: string; pipeline: string;
-  face_clean: boolean; face_sharpen: boolean; face_spots: boolean;
+  eye_sharpen: boolean; face_clean: boolean; face_sharpen: boolean; face_spots: boolean;
   face_strength: number; face_report: { faces?: number; spots?: number; changed_pixels?: number; message?: string };
 };
 export type Health = { status: string; engine: string; device: "cpu" | "cuda"; pipeline: string; resolution: number };

@@ -21,6 +21,7 @@ export default function Studio() {
   const [online, setOnline] = useState(false);
   const [model, setModel] = useState<"quality" | "fast">("quality");
   const [refine, setRefine] = useState(true);
+  const [eyeSharpen,setEyeSharpen]=useState(false);
   const [faceClean,setFaceClean]=useState(false);
   const [faceSharpen,setFaceSharpen]=useState(false);
   const [faceSpots,setFaceSpots]=useState(true);
@@ -57,7 +58,7 @@ export default function Studio() {
   const busy = active?.status === "queued" || active?.status === "processing";
   const ready = active?.status === "done";
   useEffect(()=>{
-    if(active&&ready){setFaceClean(Boolean(active.face_clean));setFaceSharpen(Boolean(active.face_sharpen));setFaceSpots(active.face_spots??true);setFaceStrength(active.face_strength??70);}
+    if(active&&ready){setEyeSharpen(Boolean(active.eye_sharpen));setFaceClean(Boolean(active.face_clean));setFaceSharpen(Boolean(active.face_sharpen));setFaceSpots(active.face_spots??true);setFaceStrength(active.face_strength??70);}
   },[activeId,ready]);
 
   const notify = useCallback((text: string, error = false) => setNotice({ text, error }), []);
@@ -123,7 +124,7 @@ export default function Studio() {
       if (file.size > 20 * 1024 * 1024) { notify(`${file.name}: 20 MB sınırını aşıyor.`, true); continue; }
       if (!/\.(png|jpe?g|webp|bmp)$/i.test(file.name)) { notify(`${file.name}: JPG, PNG, WEBP veya BMP seçin.`, true); continue; }
       const body = new FormData(); body.append("file", file); body.append("model", model); body.append("refine", String(model === "quality" && refine));
-      body.append("face_clean",String(faceClean));body.append("face_sharpen",String(faceSharpen));body.append("face_spots",String(faceSpots));body.append("face_strength",String(faceStrength));
+      body.append("eye_sharpen",String(eyeSharpen));body.append("face_clean",String(faceClean));body.append("face_sharpen",String(faceSharpen));body.append("face_spots",String(faceSpots));body.append("face_strength",String(faceStrength));
       try {
         const job = await api<Job>("/jobs", { method: "POST", body });
         setJobs(previous => [job, ...previous.filter(item => item.id !== job.id)]);
@@ -227,18 +228,18 @@ export default function Studio() {
     } catch (error) { notify((error as Error).message, true); }
   }
 
-  async function updateFace(clean:boolean,sharp:boolean,spots:boolean,strength=faceStrength) {
-    const previous={clean:faceClean,sharp:faceSharpen,spots:faceSpots,strength:active?.face_strength??faceStrength};
-    setFaceClean(clean);setFaceSharpen(sharp);setFaceSpots(spots);setFaceStrength(strength);
+  async function updateFace(clean:boolean,sharp:boolean,spots:boolean,strength=faceStrength,eyes=eyeSharpen) {
+    const previous={eyes:eyeSharpen,clean:faceClean,sharp:faceSharpen,spots:faceSpots,strength:active?.face_strength??faceStrength};
+    setEyeSharpen(eyes);setFaceClean(clean);setFaceSharpen(sharp);setFaceSpots(spots);setFaceStrength(strength);
     if(!active||!ready)return;
     setFaceUpdating(true);
     try {
-      const body=new FormData();body.append("face_clean",String(clean));body.append("face_sharpen",String(sharp));body.append("face_spots",String(spots));body.append("face_strength",String(strength));
+      const body=new FormData();body.append("eye_sharpen",String(eyes));body.append("face_clean",String(clean));body.append("face_sharpen",String(sharp));body.append("face_spots",String(spots));body.append("face_strength",String(strength));
       const job=await api<Job>(`/jobs/${active.id}/retouch`,{method:"POST",body});
       setJobs(old=>[job,...old]);setActiveId(job.id);setBrush(null);setDirty(false);
-      notify(clean||sharp?"Yüz ayarı ayrı bir sonuç olarak uygulanıyor.":"Yüz işlemi kapatıldı; rötuşsuz kesim geri getiriliyor.");
+      notify(clean||sharp||eyes?"Yüz ayarı ayrı bir sonuç olarak uygulanıyor.":"Yüz işlemi kapatıldı; rötuşsuz kesim geri getiriliyor.");
     } catch(error) {
-      setFaceClean(previous.clean);setFaceSharpen(previous.sharp);setFaceSpots(previous.spots);setFaceStrength(previous.strength);
+      setEyeSharpen(previous.eyes);setFaceClean(previous.clean);setFaceSharpen(previous.sharp);setFaceSpots(previous.spots);setFaceStrength(previous.strength);
       notify((error as Error).message,true);
     } finally {setFaceUpdating(false);}
   }
@@ -285,9 +286,10 @@ export default function Studio() {
             <label className="toggle-row"><span>Leke temizliği<small>Küçük cilt alanlarında yerel onarım</small></span><input aria-label="Yüz leke temizliği" type="checkbox" checked={faceClean} disabled={busy||saving||dirty||faceUpdating} onChange={e=>void updateFace(e.target.checked,faceSharpen,faceSpots)}/><span className="toggle-track"/></label>
             <label className="toggle-row"><span>Doğal netlik<small>NAFNet · seçici kenar ayrıntısı</small></span><input aria-label="Yüz hafif netlik" type="checkbox" checked={faceSharpen} disabled={busy||saving||dirty||faceUpdating} onChange={e=>void updateFace(faceClean,e.target.checked,faceSpots)}/><span className="toggle-track"/></label>
             {faceSharpen&&<div className="face-strength"><label htmlFor="face-strength">Netlik gücü <strong>%{faceStrength}</strong></label><input id="face-strength" type="range" min="0" max="100" step="5" value={faceStrength} disabled={busy||saving||dirty||faceUpdating} onChange={e=>setFaceStrength(Number(e.target.value))}/><small>Düşük: hafif · Yüksek: cilt kenarı kontrastı. Göz ve ağız korunur.</small>{ready&&<button className="small-primary" disabled={busy||saving||dirty||faceUpdating} onClick={()=>void updateFace(faceClean,faceSharpen,faceSpots,faceStrength)}>Netlik gücünü uygula</button>}</div>}
+            <label className="toggle-row"><span>Doğal göz netliği<small>Mevcut iris ve kirpik kenarlarına sınırlı kontrast</small></span><input aria-label="Doğal göz netliği" type="checkbox" checked={eyeSharpen} disabled={busy||saving||dirty||faceUpdating} onChange={e=>void updateFace(faceClean,faceSharpen,faceSpots,faceStrength,e.target.checked)}/><span className="toggle-track"/></label>
             <label className="face-spots"><input type="checkbox" checked={faceSpots} disabled={!faceClean||busy||saving||dirty||faceUpdating} onChange={e=>void updateFace(faceClean,faceSharpen,e.target.checked)}/>Küçük benekleri de hedefle</label>
             <p className="pipeline-note">Yüz yeniden üretilmez. Küçük ben ve çiller değişebilir; kıl ve doku korunması garanti edilemez. Kapatınca rötuşsuz kesime dönülür.</p>
-            {active?.face_report?.message&&(active.face_clean||active.face_sharpen)&&<p className="face-report" role="status">{active.face_report.message}</p>}
+            {active?.face_report?.message&&(active.face_clean||active.face_sharpen||active.eye_sharpen)&&<p className="face-report" role="status">{active.face_report.message}</p>}
           </div>
           <div className="settings-group"><div className="group-heading"><h3>Arka plan</h3><span>{colors.includes(background) ? labels[colors.indexOf(background)] : "Özel"}</span></div><div className="color-options">{colors.map((color, index) => <button key={color} className={`color-swatch ${background === color ? "chosen" : ""} ${color === "transparent" ? "checker" : ""}`} style={{backgroundColor: color === "transparent" ? undefined : color}} onClick={() => setBackground(color)} aria-label={`${labels[index]} arka plan`} title={labels[index]}>{background === color && <Check size={17} color={color === "#183d32" ? "white" : "#183d32"}/>}</button>)}<label className="custom-color" title="Özel renk"><Plus size={18}/><input aria-label="Özel arka plan rengi" type="color" value={background === "transparent" ? "#ffffff" : background} onChange={e => setBackground(e.target.value)}/></label></div></div>
           <div className="settings-group export-settings"><div className="group-heading"><h3>Dışa aktar</h3></div><label className="select-label">Boyut<select value={preset} onChange={e => setPreset(e.target.value)}><option value="original">Orijinal boyut</option><option value="portrait">Portre · 600 × 800</option></select></label><div className="format-row"><span>Dosya biçimi</span><div className="format-switch"><button onClick={() => setFormat("png")} className={format === "png" ? "active" : ""}>PNG</button><button onClick={() => setFormat("jpg")} className={format === "jpg" ? "active" : ""}>JPG</button></div></div>{format === "jpg" && background === "transparent" && <p className="format-note">JPG, beyaz arka planla kaydedilir.</p>}{preset === "portrait" && <p className="format-note">Nesne ortalanır. Resmî biyometrik uygunluk garantisi vermez.</p>}</div>

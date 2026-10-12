@@ -180,7 +180,7 @@ def test_face_enabled_on_upload_is_applied_after_cutout(tmp_path):
     class FaceService:
         def apply(self,image,**options):
             assert image.getpixel((0,0))[3]==0
-            assert options=={"clean":True,"sharpen":False,"spots":True,"strength":70}
+            assert options=={"clean":True,"sharpen":False,"spots":True,"strength":70,"eyes":False}
             return image,{"faces":0,"spots":0,"changed_pixels":0,"message":"Yüz yok"}
     with TestClient(create_app(tmp_path,FakeEngine(),FaceService())) as client:
         job=upload(client,face_clean="true")
@@ -255,6 +255,28 @@ def test_face_strength_is_persisted_passed_and_validated(tmp_path):
         job=upload(client,face_sharpen="true",face_strength="85")
         assert job["status"]=="done" and job["face_strength"]==85
         assert client.post(f"/api/jobs/{job['id']}/retouch",data={"face_strength":"101"}).status_code==422
+
+
+def test_eye_toggle_is_independent_persisted_and_off_restores_base(tmp_path):
+    class FaceService:
+        def apply(self,image,**options):
+            assert options['eyes'] is True
+            assert options['clean'] is False and options['sharpen'] is False
+            result=image.copy();result.putpixel((40,50),(190,95,48,255))
+            return result,{'message':'Eye test'}
+    with TestClient(create_app(tmp_path,FakeEngine(),FaceService())) as client:
+        job=upload(client,eye_sharpen='true')
+        assert job['status']=='done' and job['eye_sharpen'] is True
+        assert job['face_clean'] is False and job['face_sharpen'] is False
+        response=client.post(f"/api/jobs/{job['id']}/retouch",data={'eye_sharpen':'false'})
+        new=response.json()
+        for _ in range(100):
+            new=client.get(f"/api/jobs/{new['id']}").json()
+            if new['status'] in {'done','failed'}:break
+            time.sleep(.02)
+        assert new['status']=='done' and new['eye_sharpen'] is False
+        image=Image.open(io.BytesIO(client.get(new['result_url']).content))
+        assert image.getpixel((40,50))==(200,100,50,255)
 
 
 def test_import_store_defers_recovery(tmp_path):
