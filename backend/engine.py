@@ -8,6 +8,7 @@ from PIL import Image, ImageChops
 from .matting import refine_tiled, automatic_detail_region, structural_guide
 from .foreground import recover_foreground
 from .polish import polish_alpha
+from .subject_guard import protect_subject
 from .model_registry import BIREF_REPO, BIREF_REVISION, STRUCTURE_REPO, STRUCTURE_REVISION, VIT_REPO, VIT_REVISION
 
 logger = logging.getLogger("studio.engine")
@@ -24,6 +25,15 @@ class BackgroundEngine:
         self.sessions = {}
         self.models = {}
         self._runtime = None
+        self._eye_detector = None
+
+    def protect(self, image, result, report=None):
+        from .face import FaceRetoucher
+        if self._eye_detector is None:
+            self._eye_detector = FaceRetoucher(self.cache)
+        self._report(report,98,"Göz rengi ve opak iç ayrıntılar korunuyor")
+        detections=self._eye_detector.detect(np.asarray(image.convert('RGB')))
+        return protect_subject(image,result,detections)
 
     def runtime_info(self):
         if self._runtime is None:
@@ -143,7 +153,7 @@ class BackgroundEngine:
         self._report(report, 97, "Saç kenarlarından eski arka plan rengi temizleniyor")
         result = recover_foreground(image, refined, refine_alpha=True)
         self._report(report, 98, "Doğal şeffaflık korunarak sonuç kaydediliyor")
-        return result
+        return self.protect(image,result,report)
 
     def remove(self, image: Image.Image, model: str, refine: bool, report=None) -> Image.Image:
         background_guard = None
@@ -166,4 +176,4 @@ class BackgroundEngine:
             return self.refine(image, alpha, report=report, background_guard=background_guard)
         result = image.convert("RGBA")
         result.putalpha(ImageChops.multiply(alpha, image.getchannel("A")))
-        return result
+        return self.protect(image,result,report)

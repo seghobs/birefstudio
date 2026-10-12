@@ -37,6 +37,8 @@ Kapatmak için **stop.bat** dosyasına çift tıklayın. Bu klasörden çalışa
 
 ## Özellikler
 
+- Arka plan sonrası göz/iç doku koruması: yüksek güvenli yüz tespitinde, çevresi ön planla desteklenen göz bölgesi kaynak RGB ve kaynak alfa ile geri konur. Gözler sonraki yüz rötuşundan da korunur. Opak iç bölgeler (alfa ≥250, 5×5 komşulukta ≥240) kaynak pikselleriyle korunur; yarı saydam saç konturu ve arka plan boşlukları sertleştirilmez. Yüz tespiti kaçabilir/yanılabilir; tüm fotoğraflarda kusursuz göz/saç koruması garanti edilmez. Bilinçli elle silme bu otomatik korumayı tekrar uygulamaz.
+
 - Saç piksel ayrıntısı güncellemesi: son maske temizliği tek geçişte en fazla 8 alfa seviyesi azaltır. Yarı saydam kenarlarda kaynak RGB renk doğrusu üzerinden sınırlı kapsama düzeltmesi ve renk çözücüsünün kaybettiği kaynak piksel farkının geri eklenmesi uygulanır. Gaussian fırça geçişi kaldırıldı; fırça seçimi dışına taşmaz. 1:1 ve üzeri önizleme kaynak piksellerini interpolasyonla yumuşatmadan gösterir; büyük büyütmede piksel basamakları normaldir. Bu, kayıp tellerin tümünü geri kazanma veya sıfır artefakt garantisi değildir.
 
 - **Yakınlaştırmalı karşılaştırma:** tekerlek veya +/− ile büyütme, sürükleyerek gezinme, 1:1 kaynak piksel görünümü, ekrana sığdırma ve sürüklenebilir önce/sonra çizgisi. Dokunmatik ekranda iki parmakla büyütme desteklenir. Fırça açıkken Alt+sürükleme veya orta tuşla gezinilir.
