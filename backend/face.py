@@ -4,6 +4,7 @@ import threading
 from pathlib import Path
 import numpy as np
 from PIL import Image
+from .healing import heal_patch
 
 YUNET_REVISION = "26cc381e4d2594bb9f47a26eb8fd96c94a13660d"
 YUNET_URL = f"https://media.githubusercontent.com/media/opencv/opencv_zoo/{YUNET_REVISION}/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
@@ -161,9 +162,9 @@ class FaceRetoucher:
                     if np.max(np.abs(target_texture-donor_texture))>8:
                         continue
                     donor=np.clip(donor.astype(float)+np.clip(target_tone-tone,-6,6),0,255)
-                    blend=np.minimum(distance_transform_edt(lesion)/2,1)[...,None]
-                    existing=working[y0:y1,x0:x1].astype(float)
-                    healed=np.round(existing*(1-blend)+donor*blend).astype(np.uint8)
+                    # Match native illumination at the boundary, transfer the
+                    # donor's local texture gradients only inside the small spot.
+                    healed=heal_patch(working[y0:y1,x0:x1],donor,lesion)
                     working[y0:y1,x0:x1][lesion]=healed[lesion]
                     changed[y0:y1,x0:x1] |= lesion
                     report["spots"]+=1
