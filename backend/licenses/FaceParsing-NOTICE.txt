@@ -1,0 +1,7 @@
+BiSeNet face parsing model, yakhyo/face-parsing, MIT.
+Source revision: 8a4729d95118d0e97c44185f9bdef3d6bfeaaf99
+Source: https://github.com/yakhyo/face-parsing/tree/8a4729d95118d0e97c44185f9bdef3d6bfeaaf99
+Model: https://github.com/yakhyo/face-parsing/releases/download/weights/resnet18.onnx
+SHA256: 0d9bd318e46987c3bdbfacae9e2c0f461cae1c6ac6ea6d43bbe541a91727e33f
+Preprocessing/class schema informed the native skin eligibility wrapper.
+No model-generated RGB is used. Model size: 53,205,364 bytes.

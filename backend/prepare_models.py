@@ -26,6 +26,9 @@ def main():
     from .blemish_detector import BlemishDetector
     print('Ogrenilmis benek tespit modeli hazirlaniyor...',flush=True)
     BlemishDetector(cache).load()
+    from .skin_mask import SkinMask
+    print('Cilt/goz/sac bolgeleme modeli hazirlaniyor...',flush=True)
+    SkinMask(cache).load()
     print('Tum model onbellekleri hazir.',flush=True)
 
 

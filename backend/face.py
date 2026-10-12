@@ -20,6 +20,8 @@ class FaceRetoucher:
         self.deblur = NaturalDeblur(cache)
         from .blemish_detector import BlemishDetector
         self.spot_detector=BlemishDetector(cache)
+        from .skin_mask import SkinMask
+        self.skin_mask=SkinMask(cache)
 
     def detect(self, rgb):
         with self.lock:
@@ -53,7 +55,6 @@ class FaceRetoucher:
         if not clean and not sharpen:
             return image.copy(), {"faces":0,"spots":0,"changed_pixels":0,"message":"Yüz işlemi kapalı"}
         import cv2
-        from scipy.ndimage import distance_transform_edt
         rgba = np.asarray(image.convert("RGBA"))
         original = rgba[...,:3].copy()
         output = original.copy()
@@ -91,6 +92,27 @@ class FaceRetoucher:
             cv2.rectangle(safe,(mx-round(fw*.27),my-round(fh*.10)),
                           (mx+round(fw*.27),my+round(fh*.10)),0,-1)
             safe &= (alpha>=250).astype(np.uint8)
+            clarity_safe=safe.copy()
+            if clean or sharpen:
+                # Parse a context crop rather than a distorted tightly cropped
+                # face. Semantic skin lets nose-bridge freckles be treated while
+                # eyes, brows and hair retain independent hard protection.
+                padding=round(max(w,h)*.25)
+                cl,ct=max(0,left-padding),max(0,top-padding)
+                cr,cb=min(image.width,right+padding),min(image.height,bottom+padding)
+                parsed=self.skin_mask.predict(original[ct:cb,cl:cr])
+                if parsed is not None:
+                    parsed=parsed[top-ct:bottom-ct,left-cl:right-cl]
+                    skin=np.zeros(safe.shape,np.uint8)
+                    cv2.ellipse(skin,(round(fw*.5),round(fh*.50)),(round(fw*.40),round(fh*.45)),0,0,360,1,-1)
+                    skin &= parsed.astype(np.uint8)
+                    for point in points[:2]:
+                        cv2.ellipse(skin,tuple(np.round(point).astype(int)),
+                                    (max(3,round(fw*.12)),max(3,round(fh*.045))),0,0,360,0,-1)
+                    cv2.ellipse(skin,(nx,ny),(max(3,round(fw*.075)),max(2,round(fh*.035))),0,0,360,0,-1)
+                    cv2.ellipse(skin,(mx,my),(max(3,round(fw*.26)),max(3,round(fh*.08))),0,0,360,0,-1)
+                    safe=skin & (alpha>=250).astype(np.uint8)
+                    clarity_safe &= parsed.astype(np.uint8)
             lab=cv2.cvtColor(rgb,cv2.COLOR_RGB2LAB).astype(np.float32)
             if (safe>0).sum() < 40:
                 continue
@@ -112,6 +134,11 @@ class FaceRetoucher:
             learned=np.zeros(safe.shape,dtype=bool)
             if clean and spots:
                 learned=self.spot_detector.predict(rgb)>=.25
+                # Detect compact weak freckles at two native scales. Require
+                # consistent contrast so individual one-pixel pores are spared.
+                coarse=cv2.medianBlur(light.astype(np.uint8),2*radius+11).astype(np.float32)
+                weak=((local_light-light)>3)&((coarse-light)>4)
+                candidate |= (safe>0)&weak
             count,labels,stats,_=cv2.connectedComponentsWithStats(candidate.astype(np.uint8),8)
             classical_count=count
             # Keep classical point targets separate: unioning adjacent learned
@@ -154,15 +181,27 @@ class FaceRetoucher:
                     if not lesion.any():
                         continue
                     ring=~lesion
+                    ring &= (safe[y0:y1,x0:x1]>0)&~candidate[y0:y1,x0:x1]
                     if ring.sum()<4:
                         continue
                     target_tone=np.median(rgb[y0:y1,x0:x1][ring],axis=0)
                     best=None;best_score=float("inf")
                     footprint=cv2.dilate(lesion.astype(np.uint8),np.ones((3,3),np.uint8))>0
+                    target_texture=np.std(rgb[y0:y1,x0:x1][ring].astype(float),axis=0)
                     offsets=[(dy*k,dx*k) for k in (2,3,5,7,10,14) for dy,dx in
                              [(0,1),(0,-1),(1,0),(-1,0),(1,1),(-1,-1),(1,-1),(-1,1)]]
-                    for dy,dx in offsets:
-                        sx,sy=x0+dx*patch_radius,y0+dy*patch_radius
+                    anchors=[(x0+dx*patch_radius,y0+dy*patch_radius) for dy,dx in offsets]
+                    # Search clean gradient footprints across the entire native
+                    # face, not just 48 fixed offsets. Bound evaluation cost.
+                    validity=cv2.matchTemplate(((safe>0)&~candidate).astype(np.float32),
+                                               footprint.astype(np.float32),cv2.TM_CCORR)
+                    ay,ax=np.where(validity>=footprint.sum()-.1)
+                    if len(ax):
+                        distance=(ax-x0)**2+(ay-y0)**2
+                        nearest=np.argsort(distance)[:48]
+                        spread=np.linspace(0,len(ax)-1,min(208,len(ax)),dtype=int)
+                        anchors.extend(zip(ax[np.concatenate([nearest,spread])],ay[np.concatenate([nearest,spread])]))
+                    for sx,sy in dict.fromkeys(anchors):
                         ex,ey=sx+(x1-x0),sy+(y1-y0)
                         if sx<0 or sy<0 or ex>fw or ey>fh:
                             continue
@@ -172,8 +211,11 @@ class FaceRetoucher:
                         if not np.all(safe[sy:ey,sx:ex][footprint]) or candidate[sy:ey,sx:ex][footprint].any():
                             continue
                         donor=rgb[sy:ey,sx:ex]
+                        donor_texture=np.std(donor[footprint].astype(float),axis=0)
+                        if np.max(np.abs(target_texture-donor_texture))>8:
+                            continue
                         tone=np.median(donor.reshape(-1,3),axis=0)
-                        score=float(np.mean((tone-target_tone)**2))
+                        score=float(np.mean((tone-target_tone)**2))+.5*float(np.mean((target_texture-donor_texture)**2))
                         if score<best_score:
                             best_score=score;best=(donor,tone)
                     # Poisson healing fixes target boundary illumination, so a
@@ -181,10 +223,6 @@ class FaceRetoucher:
                     if best is None or best_score>256:
                         continue
                     donor,tone=best
-                    target_texture=np.std(rgb[y0:y1,x0:x1][ring].astype(float),axis=0)
-                    donor_texture=np.std(donor.reshape(-1,3).astype(float),axis=0)
-                    if np.max(np.abs(target_texture-donor_texture))>8:
-                        continue
                     donor=np.clip(donor.astype(float)+np.clip(target_tone-tone,-6,6),0,255)
                     # Match native illumination at the boundary, transfer the
                     # donor's local texture gradients only inside the small spot.
@@ -195,7 +233,7 @@ class FaceRetoucher:
             if sharpen:
                 # The same protected skin mask applies to BOTH stages.
                 # Never restore eyes, brows, lips or nostrils from model output.
-                detail_mask=(safe>0)&(alpha>=250)&~protected
+                detail_mask=(clarity_safe>0)&(safe>0)&(alpha>=250)&~protected
                 restored=self.deblur.apply(working,detail_mask,strength=strength)
                 changed |= np.any(restored!=working,axis=2)
                 working=restored
@@ -208,7 +246,7 @@ class FaceRetoucher:
                 xy=cv2.boxFilter(gx*gy,-1,(5,5))
                 coherence=np.sqrt((xx-yy)**2+4*xy*xy)/(xx+yy+1e-6)
                 gradient=np.hypot(gx,gy)
-                eligible=(safe>0)&~protected&(coherence>.55)&(gradient>3)&(gradient<40)
+                eligible=(clarity_safe>0)&(safe>0)&~protected&(coherence>.55)&(gradient>3)&(gradient<40)
                 detail=cv2.Laplacian(luminance,cv2.CV_32F,ksize=1)
                 adjustment=np.clip(-.22*detail,-6,6)[...,None]*np.clip(strength/70,0,1.4)
                 values=working.astype(np.float32)

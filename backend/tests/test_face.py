@@ -13,6 +13,9 @@ class ControlledFace(FaceRetoucher):
         class NoLearnedSpots:
             def predict(self,rgb):return np.zeros(rgb.shape[:2],dtype=float)
         self.spot_detector=NoLearnedSpots()
+        class NoSemanticSkin:
+            def predict(self,rgb):return None
+        self.skin_mask=NoSemanticSkin()
     def detect(self,rgb):
         return [[20,20,140,160,60,90,120,90,90,125,70,155,110,155,.99]]
 
@@ -122,3 +125,44 @@ def test_learned_detector_not_loaded_for_clarity_or_pimple_only(tmp_path):
     service.spot_detector=Forbidden()
     service.apply(sample(),sharpen=True)
     service.apply(sample(),clean=True,spots=False)
+
+
+def test_semantic_skin_treats_bridge_spot_but_keeps_eye_centres_and_hair(tmp_path):
+    rgb=np.full((210,200,3),[210,165,140],dtype=np.uint8)
+    rgb[96:100,88:92]-=7  # Skin between eyes excluded by old rectangle.
+    rgb[48:58,75:77]=[30,25,20]
+    source=Image.fromarray(rgb).convert('RGBA')
+    service=ControlledFace(tmp_path)
+    class Skin:
+        def predict(self,rgb):return np.ones(rgb.shape[:2],dtype=bool)
+    service.skin_mask=Skin()
+    result,report=service.apply(source,clean=True,sharpen=True)
+    before=np.asarray(source);after=np.asarray(result)
+    assert report['spots']>0
+    assert after[97,89,0]>before[97,89,0]
+    for x,y in [(60,90),(120,90),(90,155)]:
+        assert np.array_equal(before[y-5:y+6,x-5:x+6],after[y-5:y+6,x-5:x+6])
+    assert np.array_equal(before[48:58,75:77],after[48:58,75:77])
+    assert np.array_equal(before[...,3],after[...,3])
+
+
+def test_semantic_non_skin_pixels_never_change(tmp_path):
+    service=ControlledFace(tmp_path)
+    class NoSkin:
+        def predict(self,rgb):return np.zeros(rgb.shape[:2],dtype=bool)
+    service.skin_mask=NoSkin()
+    source=sample();result,report=service.apply(source,clean=True,sharpen=True)
+    assert source.tobytes()==result.tobytes()
+    assert report['changed_pixels']==0
+
+
+def test_multiscale_small_spot_is_healed_without_single_pixel_pore(tmp_path):
+    rgb=np.full((210,200,3),[210,165,140],dtype=np.uint8)
+    rgb[52:56,88:92]-=5
+    rgb[60,100]-=10
+    source=Image.fromarray(rgb).convert('RGBA')
+    result,report=ControlledFace(tmp_path).apply(source,clean=True)
+    before=np.asarray(source);after=np.asarray(result)
+    assert report['spots']>=1
+    assert after[53,89,0]>before[53,89,0]
+    assert np.array_equal(before[60,100],after[60,100])
