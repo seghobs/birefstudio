@@ -1,0 +1,7 @@
+"""Official model revisions pinned to prevent downloaded custom-code drift."""
+BIREF_REPO = "ZhengPeng7/BiRefNet_HR-matting"
+BIREF_REVISION = "5d6b6f8adcb5b417c871b1d84ceaae9871355b7f"
+STRUCTURE_REPO = "ZhengPeng7/BiRefNet_HR"
+STRUCTURE_REVISION = "a7a562f6fd16021180f2f4348f4de003a2d3d1e1"
+VIT_REPO = "hustvl/vitmatte-base-composition-1k"
+VIT_REVISION = "bf486d01a7d9e3dbcc8400f7942835caf0eaf76e"
