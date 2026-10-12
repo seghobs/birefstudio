@@ -10,6 +10,9 @@ class ControlledFace(FaceRetoucher):
         class Identity:
             def apply(self,rgb,eligible,**kwargs):return rgb.copy()
         self.deblur=Identity()
+        class NoLearnedSpots:
+            def predict(self,rgb):return np.zeros(rgb.shape[:2],dtype=float)
+        self.spot_detector=NoLearnedSpots()
     def detect(self,rgb):
         return [[20,20,140,160,60,90,120,90,90,125,70,155,110,155,.99]]
 
@@ -88,3 +91,34 @@ def test_clarity_improves_coherent_edge_without_overshoot(tmp_path):
     assert np.any(after[50:67,95:102]!=rgb[50:67,95:102])
     assert np.all(after>=np.array([210,165,140]))
     assert np.all(after<=np.array([230,185,160]))
+
+
+def test_learned_detector_heals_low_contrast_spot_and_keeps_features(tmp_path):
+    rgb=np.full((210,200,3),[210,165,140],dtype=np.uint8)
+    rgb[52:56,88:92]-=3  # Below classical detector's luminance threshold.
+    source=Image.fromarray(rgb).convert('RGBA')
+    service=ControlledFace(tmp_path)
+    class Learned:
+        def predict(self,roi):
+            mask=np.zeros(roi.shape[:2],dtype=float)
+            mask[32:36,68:72]=.9
+            mask[65:75,35:45]=.9  # Deliberate false positive on an eye.
+            mask[130:140,60:70]=.9  # Deliberate false positive on lips.
+            return mask
+    service.spot_detector=Learned()
+    result,report=service.apply(source,clean=True)
+    before=np.asarray(source);after=np.asarray(result)
+    assert report['spots']>=1
+    assert after[53,89,0]>before[53,89,0]
+    assert np.array_equal(before[75:100,40:140],after[75:100,40:140])
+    assert np.array_equal(before[150:169,65:115],after[150:169,65:115])
+    assert np.array_equal(before[...,3],after[...,3])
+
+
+def test_learned_detector_not_loaded_for_clarity_or_pimple_only(tmp_path):
+    service=ControlledFace(tmp_path)
+    class Forbidden:
+        def predict(self,rgb):raise AssertionError('Unrequested learned model')
+    service.spot_detector=Forbidden()
+    service.apply(sample(),sharpen=True)
+    service.apply(sample(),clean=True,spots=False)

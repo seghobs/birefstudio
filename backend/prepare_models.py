@@ -23,6 +23,9 @@ def main():
     session=new_session('u2netp',providers=['CPUExecutionProvider']);del session
     FaceRetoucher(cache).detect(np.zeros((64,64,3),np.uint8))
     NaturalDeblur(cache).apply(np.zeros((64,64,3),np.uint8),np.zeros((64,64),bool))
+    from .blemish_detector import BlemishDetector
+    print('Ogrenilmis benek tespit modeli hazirlaniyor...',flush=True)
+    BlemishDetector(cache).load()
     print('Tum model onbellekleri hazir.',flush=True)
 
 

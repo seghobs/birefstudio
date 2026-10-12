@@ -18,6 +18,8 @@ class FaceRetoucher:
         self.lock = threading.Lock()
         from .deblur import NaturalDeblur
         self.deblur = NaturalDeblur(cache)
+        from .blemish_detector import BlemishDetector
+        self.spot_detector=BlemishDetector(cache)
 
     def detect(self, rgb):
         with self.lock:
@@ -107,7 +109,20 @@ class FaceRetoucher:
             dark=(local_light-light)>(5 if spots else 10)
             red=(lab[...,1]-local_red)>5
             candidate=(safe>0)&dark&(red|spots)
+            learned=np.zeros(safe.shape,dtype=bool)
+            if clean and spots:
+                learned=self.spot_detector.predict(rgb)>=.25
             count,labels,stats,_=cv2.connectedComponentsWithStats(candidate.astype(np.uint8),8)
+            classical_count=count
+            # Keep classical point targets separate: unioning adjacent learned
+            # clusters previously swallowed otherwise valid small targets.
+            extra=(safe>0)&learned&~candidate
+            extra_count,extra_labels,extra_stats,_=cv2.connectedComponentsWithStats(extra.astype(np.uint8),8)
+            extra_pixels=extra_labels>0
+            labels[extra_pixels]=extra_labels[extra_pixels]+count-1
+            stats=np.concatenate([stats,extra_stats[1:]],axis=0)
+            count+=extra_count-1
+            candidate |= extra
             # Long dark structures are likely hairs/creases, never healing targets.
             protected=np.zeros(safe.shape,dtype=np.uint8)
             lesions=[]
@@ -116,7 +131,10 @@ class FaceRetoucher:
                 if max(bw,bh)/max(1,min(bw,bh))>2.5:
                     protected[labels==label]=1
                     continue
-                if 2<=area<=np.pi*(radius+1)**2 and max(bw,bh)<=2*radius+3:
+                # Learned clusters can contain several adjacent freckles. The
+                # former tiny-component limit silently discarded those clusters.
+                limit_radius=radius*3 if label>=classical_count else radius
+                if 2<=area<=np.pi*(limit_radius+1)**2 and max(bw,bh)<=2*limit_radius+3:
                     lesions.append((label,int(area)))
             protected=cv2.dilate(protected,np.ones((3,3),np.uint8))>0
             safe[protected]=0
@@ -126,7 +144,7 @@ class FaceRetoucher:
                 for label,_ in sorted(lesions,key=lambda item:item[1],reverse=True)[:512]:
                     ys,xs=np.where(labels==label)
                     cx,cy=round(xs.mean()),round(ys.mean())
-                    patch_radius=max(2,min(radius+2,round(max(np.ptp(xs),np.ptp(ys))/2)+2))
+                    patch_radius=max(2,min(round(fw*.08),int(np.ceil(max(np.ptp(xs),np.ptp(ys))/2))+3))
                     x0,y0=cx-patch_radius,cy-patch_radius
                     x1,y1=cx+patch_radius+1,cy+patch_radius+1
                     if x0<0 or y0<0 or x1>fw or y1>fh:
@@ -140,6 +158,7 @@ class FaceRetoucher:
                         continue
                     target_tone=np.median(rgb[y0:y1,x0:x1][ring],axis=0)
                     best=None;best_score=float("inf")
+                    footprint=cv2.dilate(lesion.astype(np.uint8),np.ones((3,3),np.uint8))>0
                     offsets=[(dy*k,dx*k) for k in (2,3,5,7,10,14) for dy,dx in
                              [(0,1),(0,-1),(1,0),(-1,0),(1,1),(-1,-1),(1,-1),(-1,1)]]
                     for dy,dx in offsets:
@@ -150,7 +169,6 @@ class FaceRetoucher:
                         # A freckle elsewhere in a donor patch is irrelevant:
                         # require clean texture only where healing gradients
                         # actually read it, including their one-pixel boundary.
-                        footprint=cv2.dilate(lesion.astype(np.uint8),np.ones((3,3),np.uint8))>0
                         if not np.all(safe[sy:ey,sx:ex][footprint]) or candidate[sy:ey,sx:ex][footprint].any():
                             continue
                         donor=rgb[sy:ey,sx:ex]

@@ -1,0 +1,6 @@
+Skin detector architecture adapted from ModelScope, Copyright Alibaba, Inc. and affiliates. Apache-2.0.
+Source revision: 958c3f7da68b700cc671134e267c356a2444398b
+Source: https://github.com/modelscope/modelscope/tree/958c3f7da68b700cc671134e267c356a2444398b/modelscope/models/cv/skin_retouching
+Model: https://www.modelscope.cn/models/iic/cv_unet_skin_retouching_torch/
+Checkpoint revision: 30f890aab89b787aae93c3f396dbf32714bd950e
+Uses only the detection network; whitening, global face reconstruction and model inpainting are not used.
