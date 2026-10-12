@@ -104,7 +104,7 @@ class FaceRetoucher:
             # Median is used only to find local outliers, never as output skin.
             local_light=cv2.medianBlur(light.astype(np.uint8),size).astype(np.float32)
             local_red=cv2.medianBlur(lab[...,1].astype(np.uint8),size).astype(np.float32)
-            dark=(local_light-light)>(8 if spots else 10)
+            dark=(local_light-light)>(5 if spots else 10)
             red=(lab[...,1]-local_red)>5
             candidate=(safe>0)&dark&(red|spots)
             count,labels,stats,_=cv2.connectedComponentsWithStats(candidate.astype(np.uint8),8)
@@ -140,21 +140,27 @@ class FaceRetoucher:
                         continue
                     target_tone=np.median(rgb[y0:y1,x0:x1][ring],axis=0)
                     best=None;best_score=float("inf")
-                    offsets=[(dy*k,dx*k) for k in (2,3,5,7) for dy,dx in
+                    offsets=[(dy*k,dx*k) for k in (2,3,5,7,10,14) for dy,dx in
                              [(0,1),(0,-1),(1,0),(-1,0),(1,1),(-1,-1),(1,-1),(-1,1)]]
                     for dy,dx in offsets:
                         sx,sy=x0+dx*patch_radius,y0+dy*patch_radius
                         ex,ey=sx+(x1-x0),sy+(y1-y0)
                         if sx<0 or sy<0 or ex>fw or ey>fh:
                             continue
-                        if not np.all(safe[sy:ey,sx:ex]) or candidate[sy:ey,sx:ex].mean()>.04:
+                        # A freckle elsewhere in a donor patch is irrelevant:
+                        # require clean texture only where healing gradients
+                        # actually read it, including their one-pixel boundary.
+                        footprint=cv2.dilate(lesion.astype(np.uint8),np.ones((3,3),np.uint8))>0
+                        if not np.all(safe[sy:ey,sx:ex][footprint]) or candidate[sy:ey,sx:ex][footprint].any():
                             continue
                         donor=rgb[sy:ey,sx:ex]
                         tone=np.median(donor.reshape(-1,3),axis=0)
                         score=float(np.mean((tone-target_tone)**2))
                         if score<best_score:
                             best_score=score;best=(donor,tone)
-                    if best is None or best_score>64:
+                    # Poisson healing fixes target boundary illumination, so a
+                    # clean donor with a different average tone can still work.
+                    if best is None or best_score>256:
                         continue
                     donor,tone=best
                     target_texture=np.std(rgb[y0:y1,x0:x1][ring].astype(float),axis=0)
