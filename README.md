@@ -17,6 +17,8 @@ FastAPI ve Next.js (TypeScript / TSX) ile çalışan yerel arka plan kaldırma s
 
 ## Tek tıkla çalıştırma
 
+**Kaldırma: `uninstaller.bat`**. `KALDIR` onayından sonra sunucuları kapatır; bu projedeki Python/Node ortamlarını, paketleri, model önbelleğini, yüklenen fotoğrafları, sonuçları, günlükleri ve teslim dosyalarını kalıcı siler. Kaynak kodu/Git ve önceden kurulu sistem Python/Node korunur. Proje dışındaki özel `STUDIO_DATA_DIR` otomatik silinmez. `uninstaller.bat -WhatIf -NoPause` silmeden hedefleri gösterir. Tekrar kurmak için `setup.bat` kullanın.
+
 **İlk kurulum: `setup.bat` dosyasına çift tıklayın.** Windows x64 üzerinde eksik Python 3.13 ve Node.js 24 LTS resmî kaynaklardan otomatik hazırlanır. İndirme SHA256 değerleri doğrulanır. Python/Node mevcut ve uyumluysa yeniden kurulmaz. Eksik çalışma ortamları proje içindeki `.tools/` klasörüne hazırlanır; sistem PATH ayarı değiştirilmez. Python ortamı, CPU/NVIDIA paketleri, Next.js arayüzü ve tüm model önbellekleri hazırlanır. İlk kurulum internet ve birkaç GB boş alan gerektirir. Hazırlık sonunda sunucular otomatik açılmaz; `çalıştır.bat` ile açılır, `stop.bat` ile kapatılır. Kurulum kaydı `logs/setup.log` içindedir; kesilen kurulumu aynı dosyayı tekrar açarak sürdürebilirsiniz.
 
 Komut satırı: `setup.bat -NoPause` kurulum sonunda beklemez; `setup.bat -SkipModels` model indirmeyi ilk kullanıma bırakır. `python launcher.py --setup-only --download-models` yalnızca uygulama/model hazırlığını yapar. Aşağıdaki manuel ortam kurulumu isteğe bağlıdır:
