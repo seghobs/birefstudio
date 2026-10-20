@@ -50,3 +50,14 @@ class SkinMask:
             eligible = np.isin(logits.argmax(axis=0),[1,10]) & (probabilities.max(axis=0)>.5)
             eligible = cv2.resize(eligible.astype(np.uint8),(rgb.shape[1],rgb.shape[0]),interpolation=cv2.INTER_NEAREST)
             return cv2.erode(eligible,np.ones((3,3),np.uint8))>0
+
+    def labels(self,rgb):
+        """Native-size semantic labels for framing, never RGB restoration."""
+        import cv2
+        with self.lock:
+            self.load()
+            image=cv2.resize(rgb,(512,512)).astype(np.float32)/255
+            image=(image-np.array([.485,.456,.406],np.float32))/np.array([.229,.224,.225],np.float32)
+            logits=self.session.run(None,{self.session.get_inputs()[0].name:image.transpose(2,0,1)[None].copy()})[0][0]
+            if not np.isfinite(logits).all():raise RuntimeError('Invalid face framing labels')
+            return cv2.resize(logits.argmax(0).astype(np.uint8),(rgb.shape[1],rgb.shape[0]),interpolation=cv2.INTER_NEAREST)

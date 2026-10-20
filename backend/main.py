@@ -417,7 +417,14 @@ def create_app(data_dir: Path | None = None, engine=None, face_service=None, rec
             if len(faces)!=1:
                 raise HTTPException(422,'Otomatik kadraj için tek yüz içeren bir fotoğraf seçin veya otomatik kadrajı kapatın.')
             face=faces[0]
-        box=portrait_crop(image,dimensions[0]/dimensions[1],face,zoom,offset_x,offset_y)
+        alignment={}
+        if face is not None:
+            from .biometric import align_portrait
+            from .skin_mask import SkinMask
+            parser=face_service.skin_mask if hasattr(face_service,'skin_mask') else SkinMask(store.root/'models')
+            try:image,box,alignment=align_portrait(image,face,parser,dimensions,zoom,offset_x,offset_y)
+            except ValueError as error:raise HTTPException(422,str(error))
+        else:box=portrait_crop(image,dimensions[0]/dimensions[1],None,zoom,offset_x,offset_y)
         sheet=render_sheet(image,plan,box,marks)
         if preview and format=='png':
             sheet.thumbnail((900,1100),Image.Resampling.LANCZOS)
@@ -426,7 +433,7 @@ def create_app(data_dir: Path | None = None, engine=None, face_service=None, rec
         else:sheet.save(buf,format='PNG',dpi=(DPI,DPI))
         return Response(buf.getvalue(),media_type='application/pdf' if format=='pdf' else 'image/png',
                         headers={'Content-Disposition':f'{"inline" if preview else "attachment"}; filename="biref-{paper}-{copies}li.{format}"',
-                                 'Cache-Control':'no-store'})
+                                 'Cache-Control':'no-store','X-Print-Alignment':json.dumps(alignment,separators=(',',':'))})
 
     @app.delete("/api/jobs/{job_id}", status_code=204)
     def delete(job_id: str):
