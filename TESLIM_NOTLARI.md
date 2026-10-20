@@ -1,3 +1,11 @@
+## Fotoğraf çalışma alanı — 20 Ekim 2026
+
+Arayüz tam ekran kitaplık / fotoğraf / ayarlar / alt fotoğraf şeridi düzenine geçirildi. Büyük tanıtım başlığı kaldırıldı. Gerçek dosya adı araması, tamamlananlar ve işlem kuyruğu filtreleri eklendi. Masaüstünde fotoğraf şeridi ekran içinde kalır; ayarlar ayrı kayar. Dar ekranda düzen dikey akar.
+
+Referanslar: [Adobe Lightroom Web çalışma alanı](https://helpx.adobe.com/lightroom/web/get-set-up/learn-the-basics/tour-the-workspace.html), [Capture One arayüz düzeni](https://support.captureone.com/hc/en-us/articles/360002468797-User-interface-overview). Düzen ve araç hiyerarşisi incelendi; marka görselleri kopyalanmadı.
+
+Doğrulama: Next.js üretim derlemesi ve TypeScript; tarayıcıda dosya araması (6/96 sonuç), boş kuyruk filtresi, yakınlaştırma, mevcut fotoğrafın 4'lü baskı önizlemesi; 1366 ve 390 piksel genişliklerinde düzen kontrolü. Fotoğraf işleme algoritmaları bu tasarım değişikliğinde değiştirilmedi.
+
 Karanlık oda arayüzü — 20 Ekim 2026
 Açık kart tabanlı görünüm, mat antrasit çalışma zemini ve bakır işlem vurgularıyla değiştirildi. Sabit araç şeridi, sabit üst gezinme, serif atölye başlığı, kompakt sağ araç paneli ve yatay kontak baskı arşivi eklendi. Düzenleme/baskı girişleri ve mobil tek sütun yerleşimi tarayıcıda kontrol edildi. 1366×900 ve 390×844 görünümünde yatay sayfa taşması yok; üretim derlemesi başarılı, tarayıcı hata kaydı yok. Yalnız arayüz değiştiği için ek görüntü işleme testi eklenmedi. Ekran görüntüleri: data/print-validation/darkroom-studio.png ve darkroom-print.png.
 

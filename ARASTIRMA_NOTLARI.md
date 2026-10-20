@@ -1,3 +1,11 @@
+## Fotoğraf çalışma alanı — 20 Ekim 2026
+
+Arayüz tam ekran kitaplık / fotoğraf / ayarlar / alt fotoğraf şeridi düzenine geçirildi. Büyük tanıtım başlığı kaldırıldı. Gerçek dosya adı araması, tamamlananlar ve işlem kuyruğu filtreleri eklendi. Masaüstünde fotoğraf şeridi ekran içinde kalır; ayarlar ayrı kayar. Dar ekranda düzen dikey akar.
+
+Referanslar: [Adobe Lightroom Web çalışma alanı](https://helpx.adobe.com/lightroom/web/get-set-up/learn-the-basics/tour-the-workspace.html), [Capture One arayüz düzeni](https://support.captureone.com/hc/en-us/articles/360002468797-User-interface-overview). Düzen ve araç hiyerarşisi incelendi; marka görselleri kopyalanmadı.
+
+Doğrulama: Next.js üretim derlemesi ve TypeScript; tarayıcıda dosya araması (6/96 sonuç), boş kuyruk filtresi, yakınlaştırma, mevcut fotoğrafın 4'lü baskı önizlemesi; 1366 ve 390 piksel genişliklerinde düzen kontrolü. Fotoğraf işleme algoritmaları bu tasarım değişikliğinde değiştirilmedi.
+
 Otomatik baş/göz hizası ve korumalı kadraj — 20 Ekim 2026
 YuNet göz noktalarıyla tüm fotoğrafa tek rijit dönüş uygulanır; yüz şekli/iris yeniden üretilmez. 15 dereceden fazla eğim veya düşük güvenli tespit reddedilir. Saç ve cilt semantik etiketleri, orijinal alfa siluetiyle birlikte baş sınırlarını bulur; üst omuz silueti ayrıca ölçülür. Yakınlık/konum ayarları korunan sınırları kesmeyecek şekilde sınırlandırılır. İşlemde premultiplied-alpha dönüşü kullanılır; saç kenarına şeffaf arka plan RGB'si taşınmaz. Giriş kenarında zaten kesilmiş saç/omuz tamamlanmaz, uyarı gösterilir.
 50×60 mm'de yaklaşık yüz yüksekliği 34 mm ve göz çizgisi üstten %42 (25,2 mm) hedeflenir. Bu çerçeveleme referansıdır, evrensel resmi göz yüksekliği standardı veya biyometrik uygunluk onayı değildir. Tahmini yüz yüksekliği 32–36 mm dışında kalırsa belirgin uyarı çıkar. Saç ve omuz koruması ile bu hedef aynı karede sağlanamıyorsa sistem yüzü/kıyafeti daraltmaz veya omuzları silmez; kadrajı genişletir ve uygunluk uyarısı verir. Uzun saçın gövdeye kadar uzanan bütün uzunluğu veya tüm kollar, biyometrik çerçevenin kapsamı değildir.
