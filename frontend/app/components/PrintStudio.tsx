@@ -1,0 +1,47 @@
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { ArrowDownToLine, Check, Crop, LoaderCircle, Printer, RotateCcw, Scissors, X } from "lucide-react";
+import type { Job } from "@/lib/api";
+
+type Props={job:Job;onClose:()=>void};
+export default function PrintStudio({job,onClose}:Props){
+ const [preset,setPreset]=useState("tr"),[paper,setPaper]=useState("13x18"),[copies,setCopies]=useState(4);
+ const [width,setWidth]=useState(50),[height,setHeight]=useState(60),[gap,setGap]=useState(3);
+ const [zoom,setZoom]=useState(1),[x,setX]=useState(0),[y,setY]=useState(0);
+ const [marks,setMarks]=useState(true),[auto,setAuto]=useState(true),[source,setSource]=useState("document");
+ const [preview,setPreview]=useState(""),[loading,setLoading]=useState(true),[error,setError]=useState("");
+ const closeRef=useRef<HTMLButtonElement>(null),dialogRef=useRef<HTMLDivElement>(null);
+ const query=new URLSearchParams({preset,paper,copies:String(copies),width_mm:String(width),height_mm:String(height),gap_mm:String(gap),zoom:String(zoom),offset_x:String(x),offset_y:String(y),marks:String(marks),auto_face:String(auto),source});
+ const url=`/api/jobs/${job.id}/print-sheet?${query}`;
+ useEffect(()=>{
+  const previous=document.activeElement as HTMLElement|null;closeRef.current?.focus();const overflow=document.body.style.overflow;document.body.style.overflow="hidden";
+  return ()=>{document.body.style.overflow=overflow;previous?.focus();};
+ },[]);
+ useEffect(()=>{
+  const controller=new AbortController();let objectUrl="";setLoading(true);setError("");
+  const timer=setTimeout(()=>{void fetch(url+"&preview=true",{signal:controller.signal}).then(async response=>{
+   if(!response.ok){const body=await response.json();throw new Error(body.detail||"Baskı önizlemesi hazırlanamadı.");}
+   return response.blob();
+  }).then(blob=>{objectUrl=URL.createObjectURL(blob);setPreview(objectUrl);setLoading(false);}).catch(error=>{if(error.name!=="AbortError"){setError(error.message);setLoading(false);}});},350);
+  return ()=>{clearTimeout(timer);controller.abort();if(objectUrl)URL.revokeObjectURL(objectUrl);};
+ },[url]);
+ function print(){
+  const dimensions:Record<string,[number,number]>={"10x15":[100,150],"4x6":[101.6,152.4],"13x18":[130,180],a4:[210,297]};
+  const [w,h]=dimensions[paper];
+  const iframe=document.createElement("iframe");iframe.className="print-frame";iframe.title="Baskı sayfası";
+  iframe.srcdoc=`<!doctype html><html lang="tr"><head><title>BiRef baskı</title><style>@page{size:${w}mm ${h}mm;margin:0}html,body{margin:0;padding:0;width:${w}mm;height:${h}mm}img{display:block;width:${w}mm;height:${h}mm;object-fit:fill}</style></head><body><img src="${(url+"&format=png").replaceAll("&","&amp;")}" alt="Baskı yerleşimi"></body></html>`;
+  iframe.onload=()=>{const photo=iframe.contentDocument?.querySelector("img");if(photo?.naturalWidth&&iframe.contentWindow){iframe.contentWindow.onafterprint=()=>{iframe.remove();closeRef.current?.focus();};iframe.contentWindow.focus();iframe.contentWindow.print();}};
+  document.body.appendChild(iframe);setTimeout(()=>iframe.remove(),300000);
+ }
+ function changePreset(value:string){setPreset(value);if(value==="tr"||value==="35x45")setSource("document");setPaper(value==="35x45"?"10x15":"13x18");setZoom(1);setX(0);setY(0);}
+ const dimensions=preset==="tr"?"50 × 60":preset==="35x45"?"35 × 45":preset==="vesikalik"?"45 × 60":`${width} × ${height}`;
+ return <div className="print-backdrop" onClick={onClose}><div className="print-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="print-title" onClick={e=>e.stopPropagation()} onKeyDown={e=>{if(e.key==="Escape")onClose();if(e.key==="Tab"){const nodes=dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select');if(!nodes?.length)return;const first=nodes[0],last=nodes[nodes.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}}}>
+  <header className="print-header"><div><span className="print-icon"><Printer size={21}/></span><div><h2 id="print-title">Baskı masası</h2><p>Vesikalık, kimlik ve pasaport için çoklu yerleşim</p></div></div><button className="icon-button" ref={closeRef} aria-label="Baskı masasını kapat" onClick={onClose}><X size={22}/></button></header>
+  <div className="print-body"><section className="print-preview"><div className="print-preview-top"><span><i/>CANLI BASKI ÖNİZLEMESİ</span><span>{copies} adet · {dimensions} mm</span></div><div className="paper-stage">{preview&&!error&&<img src={preview} alt={`${copies} adet beyaz zeminli fotoğrafın baskı yerleşimi`}/>} {loading&&<div className="print-loading"><LoaderCircle className="spin" size={25}/>Yerleşim hazırlanıyor</div>}{error&&<div className="print-error" role="alert"><Scissors size={28}/><strong>Yerleşimi kontrol edin</strong><p>{error}</p></div>}</div><div className="print-preview-footer"><span><Check size={14}/>Beyaz zemin</span><span>300 DPI · Gerçek ölçü</span><span><Scissors size={14}/>{marks?"Kesim işaretleri açık":"İşaretsiz baskı"}</span></div></section>
+  <aside className="print-settings"><div className="print-section"><span className="step-label">01 / FOTOĞRAF ÖLÇÜSÜ</span><label className="print-field">Şablon<select aria-label="Baskı fotoğraf şablonu" value={preset} onChange={e=>changePreset(e.target.value)}><option value="tr">Türkiye · Kimlik / pasaport · 50 × 60 mm</option><option value="35x45">35 × 45 mm · Ölçü şablonu</option><option value="vesikalik">Vesikalık / evrak · 45 × 60 mm</option><option value="custom">Özel ölçü</option></select></label>{preset==="custom"&&<div className="print-two"><label className="print-field">En (mm)<input type="number" min="20" max="100" value={width} onChange={e=>setWidth(Number(e.target.value))}/></label><label className="print-field">Boy (mm)<input type="number" min="20" max="100" value={height} onChange={e=>setHeight(Number(e.target.value))}/></label></div>}</div>
+  <div className="print-section"><span className="step-label">02 / KÂĞIT VE YERLEŞİM</span><div className="print-two"><label className="print-field">Kâğıt<select aria-label="Baskı kâğıdı" value={paper} onChange={e=>setPaper(e.target.value)}><option value="10x15">10 × 15 cm</option><option value="4x6">4 × 6 inç</option><option value="13x18">13 × 18 cm</option><option value="a4">A4</option></select></label><label className="print-field">Fotoğraf adedi<select aria-label="Baskı adedi" value={copies} onChange={e=>setCopies(Number(e.target.value))}>{[1,2,4,6,8,12,16].map(n=><option key={n} value={n}>{n} adet{n===4?" · 2 × 2":""}</option>)}</select></label></div><label className="print-field">Fotoğraflar arası boşluk <output>{gap} mm</output><input aria-label="Kesim boşluğu" type="range" min="2" max="10" value={gap} onChange={e=>setGap(Number(e.target.value))}/></label><label className="print-check"><input type="checkbox" checked={marks} onChange={e=>setMarks(e.target.checked)}/>Kesim işaretlerini göster</label><p className="print-note">50 × 60 mm ölçüde dörtlü baskı için 13 × 18 cm veya A4 seçin.</p></div>
+  <div className="print-section"><div className="print-section-title"><span className="step-label">03 / KADRAJ</span><button className="icon-button" aria-label="Kadrajı sıfırla" onClick={()=>{setZoom(1);setX(0);setY(0);}}><RotateCcw size={15}/></button></div><label className="print-check"><input type="checkbox" checked={auto} onChange={e=>setAuto(e.target.checked)}/>Yüze göre otomatik kadraj</label>{[["Yakınlık",zoom,.5,3,.05,setZoom],["Yatay konum",x,-100,100,1,setX],["Dikey konum",y,-100,100,1,setY]].map(([name,value,min,max,step,setter])=><label className="print-field" key={String(name)}>{String(name)}<output>{name==="Yakınlık"?`${Math.round(Number(value)*100)}%`:String(value)}</output><input aria-label={String(name)} type="range" min={Number(min)} max={Number(max)} step={Number(step)} value={Number(value)} onChange={e=>(setter as (v:number)=>void)(Number(e.target.value))}/></label>)}</div>
+  <div className="print-section"><label className="print-field">Fotoğraf kaynağı<select value={source} onChange={e=>setSource(e.target.value)}><option value="document">Evrak modu · Yüz rötuşu olmadan</option><option value="edited">Düzenlenmiş sonuç · Portre baskısı</option></select></label><p className="print-note">Ölçü şablonu başvuru uygunluğunu tek başına sağlamaz. Nötr ifade, baş oranı ve ilgili kurum koşullarını kontrol edin.</p></div>
+  </aside></div><footer className="print-actions"><p><Crop size={16}/>Yazdırırken <strong>%100 / Gerçek boyut</strong> seçin. Sayfaya sığdırmayı kapatın.</p><div><a className={`secondary-button ${error||loading?"disabled-link":""}`} href={url+"&format=png"} download><ArrowDownToLine size={16}/>PNG</a><a className={`secondary-button ${error||loading?"disabled-link":""}`} href={url+"&format=pdf"} download><ArrowDownToLine size={16}/>PDF indir</a><button className="print-primary" disabled={loading||!!error} onClick={print}><Printer size={17}/>Yazdır</button></div></footer>
+ </div></div>;
+}

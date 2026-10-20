@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query
 from fastapi.responses import FileResponse, Response
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
@@ -385,6 +385,48 @@ def create_app(data_dir: Path | None = None, engine=None, face_service=None, rec
         filename = f"studio-{job_id[:8]}{'-portrait' if preset == 'portrait' else ''}.{format}"
         return Response(buf.getvalue(), media_type="image/jpeg" if format == "jpg" else "image/png",
                         headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    @app.get("/api/jobs/{job_id}/print-sheet")
+    def print_sheet(job_id: str, paper: Literal['10x15','4x6','13x18','a4']='13x18',
+                    preset: Literal['tr','35x45','vesikalik','custom']='tr', copies: int=Query(4,ge=1,le=16),
+                    width_mm: float=Query(50,ge=20,le=100), height_mm: float=Query(60,ge=20,le=100),
+                    gap_mm: float=Query(3,ge=2,le=10), marks: bool=True, zoom: float=Query(1,ge=.5,le=3),
+                    offset_x: float=Query(0,ge=-100,le=100), offset_y: float=Query(0,ge=-100,le=100),
+                    auto_face: bool=True, source: Literal['document','edited']='document',
+                    format: Literal['png','pdf']='png', preview: bool=False):
+        from .print_sheet import layout,portrait_crop,render_sheet,lossless_pdf,PRESETS,DPI
+        result_path=image_path(job_id)
+        if source=='document':
+            base=store.root/f'{job_id}.base.png'
+            # Without a saved base, reconstruct source colours with the cutout
+            # alpha rather than accidentally printing a previously retouched face.
+            if base.exists():
+                result_path=base
+            else:
+                with Image.open(result_path) as cutout, Image.open(image_path(job_id,True)) as original:
+                    image=original.convert('RGBA');image.putalpha(cutout.getchannel('A'))
+        if source=='edited' or result_path.name.endswith('.base.png'):
+            with Image.open(result_path) as loaded:image=loaded.convert('RGBA')
+        dimensions=PRESETS[preset] or (width_mm,height_mm)
+        try:plan=layout(paper,*dimensions,copies,gap_mm)
+        except ValueError as error:raise HTTPException(422,str(error))
+        face=None
+        if auto_face:
+            import numpy as np
+            faces=face_service.detect(np.asarray(image)[...,:3])
+            if len(faces)!=1:
+                raise HTTPException(422,'Otomatik kadraj için tek yüz içeren bir fotoğraf seçin veya otomatik kadrajı kapatın.')
+            face=faces[0]
+        box=portrait_crop(image,dimensions[0]/dimensions[1],face,zoom,offset_x,offset_y)
+        sheet=render_sheet(image,plan,box,marks)
+        if preview and format=='png':
+            sheet.thumbnail((900,1100),Image.Resampling.LANCZOS)
+        buf=io.BytesIO()
+        if format=='pdf':buf.write(lossless_pdf(sheet,plan,marks))
+        else:sheet.save(buf,format='PNG',dpi=(DPI,DPI))
+        return Response(buf.getvalue(),media_type='application/pdf' if format=='pdf' else 'image/png',
+                        headers={'Content-Disposition':f'{"inline" if preview else "attachment"}; filename="biref-{paper}-{copies}li.{format}"',
+                                 'Cache-Control':'no-store'})
 
     @app.delete("/api/jobs/{job_id}", status_code=204)
     def delete(job_id: str):
